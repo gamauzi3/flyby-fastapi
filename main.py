@@ -118,19 +118,29 @@ def update_context(user_id: str, user_input: str):
 
     # 성인 수 추출
     if context["adults_number"] is None:
-        prompt = f"\"{user_input}\" 문장에서 성인 수를 숫자로 추출해줘. 없다면 'null'."
-        resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        adults = resp.choices[0].message.content.strip()
-        if adults.lower() != "null":
-            try:
-                context["adults_number"] = int(adults)
-            except:
-                pass
-        elif adults.lower() == "0":
-            context["adults_number"] = 0
+        # 숫자만 입력한 경우 직접 처리
+        direct_number = re.findall(r"\d+", user_input)
+        if direct_number:
+            context["adults_number"] = int(direct_number[0])
+        else:
+            # GPT로 처리
+            prompt = """
+            아래 문장에서 여행에 참여하는 성인 수를 숫자 하나로 추출해줘. 예: '4명', '셋', '둘이서 여행', '성인 2명' → 2
+            숫자가 없다면 'null'이라고 답해.
+            """
+            resp = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_input}
+                ]
+            )
+            adults = resp.choices[0].message.content.strip()
+            if adults.lower() != "null":
+                try:
+                    context["adults_number"] = int(re.findall(r'\d+', adults)[0])
+                except:
+                    pass
 
     # 음식 필터 감지
     if any(k in user_input for k in ["맛집", "음식", "카페"]):
