@@ -89,11 +89,11 @@ async def chat(req: ChatRequest):
     else:
         # 아직 정보가 부족한 경우 사용자에게 질문 유도
         needed = []
-        if not context["destination"]:
+        if not context.get("destination"):
             needed.append("여행 목적지")
-        if not context["duration"]:
+        if not context.get("duration"):
             needed.append("일정 (며칠)")
-        if not context["adults_number"]:
+        if not context.get("adults_number"):
             needed.append("성인 수")
 
         return {
