@@ -148,6 +148,15 @@ def update_context(user_id: str, user_input: str):
             context["departure_date"] = checkin
             context["return_date"] = checkout
 
+    # 날짜로 duration 계산
+    if context["departure_date"] and context["return_date"] and context["duration"] is None:
+        try:
+            d1 = datetime.strptime(context["departure_date"], "%Y-%m-%d")
+            d2 = datetime.strptime(context["return_date"], "%Y-%m-%d")
+            context["duration"] = (d2 - d1).days
+        except:
+            pass
+
     return context
 
 @app.post("/chat")
