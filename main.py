@@ -216,6 +216,24 @@ def recommend_food_places(destination):
         food_list.append(summary)
     return food_list or ["⚠️ 맛집 정보를 불러올 수 없어요."]
 
+def get_dest_id_from_booking(query):
+    url = "https://booking-com.p.rapidapi.com/v1/hotels/locations"
+    headers = {
+        "X-RapidAPI-Key": RAPIDAPI_KEY,
+        "X-RapidAPI-Host": "booking-com.p.rapidapi.com"
+    }
+    params = {"name": query, "locale": "ko"}
+    response = requests.get(url, headers=headers, params=params)
+    try:
+        results = response.json()
+        if isinstance(results, list) and results:
+            for item in results:
+                if item.get("dest_type") == "city":
+                    return item.get("name"), item.get("dest_id")
+    except:
+        print("❌ dest_id 조회 실패:", response.text)
+    return None, None
+
 @app.post("/chat")
 async def chat(req: Request):
     data = await req.json()
@@ -237,11 +255,10 @@ async def chat(req: Request):
         return ", ".join(parts) if parts else "없음"
 
     prompt = f"""
-    너는 친절한 여행 챗봇이야. 사용자의 대화를 보고 숙소나 항공, 맛집 추천을 해줘.
+    너는 친절한 여행 챗봇이야. 사용자의 대화를 이어서 여행 계획을 도와줘.
     아래는 지금까지 사용자 정보야: {memory_text()}
     목적지, 출발일, 여행 기간, 성인수/어린이수 정보 중 빠진 것이 있을 때만 자연스럽게 물어봐줘.
-    성인수, 어린이 수 정보가 없으면 자연스럽게 물어봐줘.
-    이미 받은 정보는 다시 묻지 말고, 대화를 이어서 여행 계획을 제안해줘.
+    이미 받은 정보는 다시 묻지 말고, 대화를 이어서 부드럽게 안내해줘.
     항상 간결하고 부드럽게 1~2문장으로 대답해줘.
     """
 
@@ -254,18 +271,25 @@ async def chat(req: Request):
     )
 
     hotel_recommendations = []
-    if conversation_context["hotel_asked"]:
-        hotel_recommendations = search_hotels_by_dest_id("270442", conversation_context["departure_date"], conversation_context["return_date"], conversation_context.get("hotel_filter", []))
+    if conversation_context["hotel_asked"] and conversation_context["destination"]:
+        dest_name, dest_id = get_dest_id_from_booking(conversation_context["destination"])
+        if dest_id:
+            hotel_recommendations = search_hotels_by_dest_id(
+                dest_id,
+                conversation_context["departure_date"],
+                conversation_context["return_date"],
+                conversation_context.get("hotel_filter", [])
+            )
 
     food_recommendations = []
-    if conversation_context["food_asked"]:
+    if conversation_context["food_asked"] and conversation_context["destination"]:
         food_recommendations = recommend_food_places(conversation_context["destination"])
 
     return {
         "recommendation": response.choices[0].message.content.strip(),
         "context": conversation_context,
-        "hotel_recommendations": hotel_recommendations,
-        "food_recommendations": food_recommendations
+        "hotels": hotel_recommendations,
+        "foods": food_recommendations
     }
 
 if __name__ == "__main__":
