@@ -175,6 +175,7 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None):
     if response.status_code != 200:
         print("❌ 호텔 검색 API 오류:", response.text)
         return []
+    print("📍 Booking 검색 응답 코드:", response.status_code)
     data = response.json()
     hotels = []
     for hotel in data.get("result", [])[:5]:
@@ -202,10 +203,12 @@ def recommend_food_places(destination):
     params = {
         "query": query,
         "language": "ko",
+        "region": conversation_context.get("destination", ""),
         "key": GOOGLE_API_KEY
     }
     response = requests.get(url, params=params)
     results = response.json().get("results", [])
+    print("🍴 Google 결과:", results)
     food_list = []
     for place in results[:5]:
         name = place.get("name")
@@ -222,6 +225,7 @@ def get_dest_id_from_booking(query):
         "X-RapidAPI-Key": RAPIDAPI_KEY,
         "X-RapidAPI-Host": "booking-com.p.rapidapi.com"
     }
+    print("📍 Booking 대상:", query)
     params = {"name": query, "locale": "ko"}
     response = requests.get(url, headers=headers, params=params)
     try:
