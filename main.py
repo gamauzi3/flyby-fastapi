@@ -185,7 +185,12 @@ async def chat(req: ChatRequest):
         }
 
     # 핵심 정보가 모두 모였는지 확인
-    if all([context["destination"], context["duration"], context["adults_number"]]):
+    if (
+        context["destination"] is not None and
+        context["duration"] is not None and
+        context["adults_number"] is not None and
+        context["adults_number"] >= 1
+    ):
         prompt = f"""
         너는 친절한 여행 챗봇이야. 아래 사용자 정보를 기반으로 여행 일정을 추천해줘.
         - 목적지: {context["destination"]}
