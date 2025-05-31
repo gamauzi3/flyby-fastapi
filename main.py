@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import openai
 import requests
 from datetime import datetime, timedelta
@@ -9,9 +10,9 @@ from pydantic import BaseModel
 import urllib.parse
 
 app = FastAPI()
-client = openai.OpenAI(api_key="REMOVED_KEY-3_bJtv46F7XD_YKbNJPFMnlJvw3EWtxyz6OQS52tW0U1hOC4HM-6u4LilxQjE_Qa6_8B6FyH3WT3BlbkFJPq-KPoI7tEVFtn0Uqtdv0Dtj8HIrKzeOxzKaRw9X5XU-QM3f-kgOhEzbGjEPGmZlr-RTfz2S4A")  # 실제 key는 환경 변수 등으로 설정 필요
-RAPIDAPI_KEY = "73fdc45c6fmsh02f06e0f16adb19p18c683jsnd8576332ca19"
-GOOGLE_API_KEY = "AIzaSyBr3cf07Kw0vN8Ydf0JXnps7fRmyauN9Sw"
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 conversation_context = {
     "destination": None,
