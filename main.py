@@ -124,6 +124,16 @@ def update_context(user_input):
             conversation_context["duration"] = (datetime.strptime(checkin, "%Y-%m-%d") - datetime.strptime(checkout, "%Y-%m-%d")).days
     # Removed all input() calls related to adults_number and children_number
 
+    # 성인 수 인식
+    adult_match = re.search(r'성인\s*([0-9]+|[일이삼사오육칠팔구십]+)', user_input)
+    if adult_match:
+        conversation_context["adults_number"] = korean_number_to_int(adult_match.group(1))
+
+    # 어린이 수 인식
+    child_match = re.search(r'어린이\s*([0-9]+|[일이삼사오육칠팔구십]+)', user_input)
+    if child_match:
+        conversation_context["children_number"] = korean_number_to_int(child_match.group(1))
+
 def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None):
     url = "https://booking-com.p.rapidapi.com/v1/hotels/search"
     headers = {
