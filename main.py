@@ -285,7 +285,7 @@ async def chat(req: Request):
                 dest_id,
                 conversation_context["departure_date"],
                 conversation_context["return_date"],
-                conversation_context.get("hotel_filter", [])
+                conversation_context.get("hotel_filter") or []
             )
 
     food_recommendations = []
@@ -297,9 +297,10 @@ async def chat(req: Request):
     conversation_context["food_asked"] = False
 
     response_data = {
-        "recommendation": response.choices[0].message.content.strip(),
         "context": conversation_context
     }
+    if not hotel_recommendations and not food_recommendations:
+        response_data["recommendation"] = response.choices[0].message.content.strip()
     if hotel_recommendations:
         response_data["hotels"] = hotel_recommendations
     if food_recommendations:
