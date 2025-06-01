@@ -112,7 +112,13 @@ def extract_location_by_regex(text):
     return None
 
 def extract_location_keyword_gpt(user_input):
-    prompt = "다음 문장에서 숙소 위치 키워드만 뽑아줘. 예: '난바역 근처 호텔' → '난바역'"
+    prompt = """
+    다음 문장에서 숙소 위치 또는 도시 이름을 한 단어로 추출해줘.
+    예를 들어 '오사카 난바역 근처 호텔 찾아줘' → '오사카'
+    '교토 기온 거리 숙소 알려줘' → '교토'
+    '서울 강남 호텔' → '서울'
+    추출할 수 없다면 '없음'으로 답해줘.
+    """
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
