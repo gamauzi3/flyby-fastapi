@@ -150,10 +150,12 @@ def update_context(user_input):
         if new_dest and new_dest.lower() not in ["없음", "none", "null"]:
             conversation_context["destination"] = new_dest
 
-    if any(k in user_input for k in ["숙소", "호텔", "잠잘 곳", "묵을 곳", "자고싶어"]) or ("추천" in user_input or "예약" in user_input or "알려줘" in user_input):
+    if any(k in user_input for k in ["숙소", "호텔", "잠잘 곳", "묵을 곳", "자고싶어"]):
         conversation_context["hotel_asked"] = True
+        if not conversation_context["hotel_filter"]:
+            conversation_context["hotel_filter"] = extract_hotel_filter_keywords_gpt(user_input)
 
-    if any(k in user_input for k in ["맛집", "음식", "카페", "배고파", "먹을 곳"]) or ("추천" in user_input or "알려줘" in user_input):
+    if any(k in user_input for k in ["맛집", "음식", "카페", "배고파", "먹을 곳"]):
         conversation_context["food_asked"] = True
         filter_keywords = ["감성", "인스타", "해변", "해변 근처", "분위기 좋은", "인기 많은", "저렴한"]
         for keyword in filter_keywords:
