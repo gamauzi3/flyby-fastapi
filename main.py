@@ -85,13 +85,46 @@ def extract_dates_from_message(message):
         return str(checkin), str(checkout)
     return None, None
 
+def extract_location_by_regex(text):
+    city_keywords = [
+        # 🇯🇵 일본
+        "오사카", "도쿄", "후쿠오카", "교토", "삿포로", "나고야", "나라", "요코하마",
+        # 🇰🇷 한국
+        "서울", "부산", "제주", "인천", "대구", "광주", "대전", "수원",
+        # 🇺🇸 미국
+        "뉴욕", "로스앤젤레스", "샌프란시스코", "라스베가스", "시카고",
+        # 🇫🇷 프랑스
+        "파리", "리옹", "마르세유",
+        # 🇮🇹 이탈리아
+        "로마", "밀라노", "베네치아", "피렌체",
+        # 🇪🇸 스페인
+        "바르셀로나", "마드리드", "세비야",
+        # 🇬🇧 영국
+        "런던", "에딘버러", "맨체스터",
+        # 🇹🇭 태국
+        "방콕", "푸켓", "치앙마이",
+        # 기타 주요 여행지
+        "하와이", "발리", "싱가포르", "홍콩", "마카오", "두바이"
+    ]
+    for city in city_keywords:
+        if city in text:
+            return city
+    return None
+
 def extract_location_keyword_gpt(user_input):
     prompt = "다음 문장에서 숙소 위치 키워드만 뽑아줘. 예: '난바역 근처 호텔' → '난바역'"
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}]
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}]
+        )
+        extracted = response.choices[0].message.content.strip()
+        if not extracted or extracted.lower() in ["없음", "없다", "null", "none"]:
+            return extract_location_by_regex(user_input)
+        return extracted
+    except Exception as e:
+        print("❌ GPT 위치 키워드 추출 실패:", str(e))
+        return extract_location_by_regex(user_input)
 
 def extract_hotel_filter_keywords_gpt(user_input):
     prompt = "다음 문장에서 호텔 특성 키워드를 모두 추출해줘. 쉼표로 구분해서 한글 키워드만. 예: '수영장 있는 가성비 좋은 호텔' → 수영장, 가성비"
@@ -104,8 +137,9 @@ def extract_hotel_filter_keywords_gpt(user_input):
 
 def update_context(user_input):
     # 💡 목적지 키워드는 요청 종류와 무관하게 항상 추출 시도
-    if not conversation_context["destination"]:
-        conversation_context["destination"] = extract_location_keyword_gpt(user_input)
+    new_dest = extract_location_keyword_gpt(user_input)
+    if new_dest and (not conversation_context["destination"] or new_dest != conversation_context["destination"]):
+        conversation_context["destination"] = new_dest
 
     if ("숙소" in user_input or "호텔" in user_input) and ("추천" in user_input or "예약" in user_input or "알려줘" in user_input):
         conversation_context["hotel_asked"] = True
