@@ -217,7 +217,9 @@ def recommend_food_places(destination):
         map_url = f"https://www.google.com/maps/search/?api=1&query={name.replace(' ', '+')}"
         summary = f"🍽 {name} (⭐ {rating})\n📍 {address}\n🔗 {map_url}"
         food_list.append(summary)
-    return food_list or ["⚠️ 맛집 정보를 불러올 수 없어요."]
+    if not food_list:
+        return []
+    return food_list
 
 def get_dest_id_from_booking(query):
     url = "https://booking-com.p.rapidapi.com/v1/hotels/locations"
@@ -293,7 +295,7 @@ async def chat(req: Request):
         "recommendation": response.choices[0].message.content.strip(),
         "context": conversation_context,
         "hotels": hotel_recommendations,
-        "foods": food_recommendations
+        "foods": food_recommendations if food_recommendations else []
     }
 
 if __name__ == "__main__":
