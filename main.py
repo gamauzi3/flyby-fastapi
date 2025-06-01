@@ -14,6 +14,20 @@ client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
+conversation_context = {
+    "destination": None,
+    "departure_date": None,
+    "return_date": None,
+    "duration": None,
+    "adults_number": None,
+    "children_number": 0,
+    "no_rooms": 1,
+    "flight_asked": False,
+    "hotel_asked": False,
+    "hotel_filter": None,
+    "food_asked": False,
+    "food_filter": None
+}
 
 def korean_number_to_int(text):
     mapping = {'일':1, '이':2, '삼':3, '사':4, '오':5, '육':6, '칠':7, '팔':8, '구':9, '십':10}
@@ -88,41 +102,40 @@ def extract_hotel_filter_keywords_gpt(user_input):
     keywords = response.choices[0].message.content.strip()
     return [kw.strip() for kw in keywords.split(",")]
 
-def update_context(user_input, context):
+def update_context(user_input):
     if ("숙소" in user_input or "호텔" in user_input) and ("추천" in user_input or "예약" in user_input or "알려줘" in user_input):
-        context["hotel_asked"] = True
-        if not context["hotel_filter"]:
-            context["hotel_filter"] = extract_hotel_filter_keywords_gpt(user_input)
-
-    if context["destination"] in [None, "", "위치 키워드가 포함되어 있지 않습니다."]:
-        context["destination"] = extract_location_keyword_gpt(user_input)
+        conversation_context["hotel_asked"] = True
+        if not conversation_context["destination"]:
+            conversation_context["destination"] = extract_location_keyword_gpt(user_input)
+        if not conversation_context["hotel_filter"]:
+            conversation_context["hotel_filter"] = extract_hotel_filter_keywords_gpt(user_input)
 
     if any(k in user_input for k in ["맛집", "음식", "카페"]) and ("추천" in user_input or "알려줘" in user_input):
-        context["food_asked"] = True
+        conversation_context["food_asked"] = True
         filter_keywords = ["감성", "인스타", "해변", "해변 근처", "분위기 좋은", "인기 많은", "저렴한"]
         for keyword in filter_keywords:
             if keyword in user_input:
-                context["food_filter"] = keyword
+                conversation_context["food_filter"] = keyword
                 break
 
-    if not context["departure_date"] or not context["return_date"]:
+    if not conversation_context["departure_date"] or not conversation_context["return_date"]:
         checkin, checkout = extract_dates_from_message(user_input)
         if checkin and checkout:
-            context["departure_date"] = checkin
-            context["return_date"] = checkout
-            context["duration"] = (datetime.strptime(checkout, "%Y-%m-%d") - datetime.strptime(checkin, "%Y-%m-%d")).days
+            conversation_context["departure_date"] = checkin
+            conversation_context["return_date"] = checkout
+            conversation_context["duration"] = (datetime.strptime(checkout, "%Y-%m-%d") - datetime.strptime(checkin, "%Y-%m-%d")).days
 
     # 성인 수 인식
     adult_match = re.search(r'성인\s*([0-9]+|[일이삼사오육칠팔구십]+)', user_input)
     if adult_match:
-        context["adults_number"] = korean_number_to_int(adult_match.group(1))
+        conversation_context["adults_number"] = korean_number_to_int(adult_match.group(1))
 
     # 어린이 수 인식
     child_match = re.search(r'어린이\s*([0-9]+|[일이삼사오육칠팔구십]+)', user_input)
     if child_match:
-        context["children_number"] = korean_number_to_int(child_match.group(1))
+        conversation_context["children_number"] = korean_number_to_int(child_match.group(1))
 
-def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, context=None):
+def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None):
     url = "https://booking-com.p.rapidapi.com/v1/hotels/search"
     headers = {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
@@ -133,13 +146,13 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
         "checkout_date": checkout,
         "dest_id": dest_id,
         "dest_type": "city",
-        "adults_number": (context or {}).get("adults_number", 2),
+        "adults_number": conversation_context.get("adults_number", 2),
         "units": "metric",
         "order_by": "popularity",
         "locale": "ko",
         "currency": "KRW",
         "filter_by_currency": "KRW",
-        "room_number": (context or {}).get("no_rooms", 1),
+        "room_number": conversation_context.get("no_rooms", 1),
         "page_number": "0"
     }
     categories_map = {
@@ -176,22 +189,22 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
                 f"ss={hotel.get('hotel_name')}&"
                 f"checkin_year={checkin[:4]}&checkin_month={int(checkin[5:7])}&checkin_monthday={int(checkin[8:10])}&"
                 f"checkout_year={checkout[:4]}&checkout_month={int(checkout[5:7])}&checkout_monthday={int(checkout[8:10])}&"
-                f"group_adults={(context or {}).get('adults_number',2)}&group_children={(context or {}).get('children_number',0)}&no_rooms={(context or {}).get('no_rooms',1)}"
+                f"group_adults={conversation_context.get('adults_number',2)}&group_children={conversation_context.get('children_number',0)}&no_rooms={conversation_context.get('no_rooms',1)}"
             )
         })
     return hotels
 
-def recommend_food_places(destination, context=None):
+def recommend_food_places(destination):
     if not destination:
         return ["❗ 도시 정보가 없어요. 맛집을 추천하려면 도시를 먼저 알려주세요."]
     query = destination + " 맛집"
-    if (context or {}).get("food_filter"):
-        query = f"{destination} {(context or {})['food_filter']} 맛집"
+    if conversation_context.get("food_filter"):
+        query = f"{destination} {conversation_context['food_filter']} 맛집"
     url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
     params = {
         "query": query,
         "language": "ko",
-        "region": (context or {}).get("destination", ""),
+        "region": conversation_context.get("destination", ""),
         "key": GOOGLE_API_KEY
     }
     response = requests.get(url, params=params)
@@ -215,9 +228,6 @@ def get_dest_id_from_booking(query):
         "X-RapidAPI-Key": RAPIDAPI_KEY,
         "X-RapidAPI-Host": "booking-com.p.rapidapi.com"
     }
-    if not query or query == "위치 키워드가 포함되어 있지 않습니다.":
-        print("📍 Booking 대상: 위치 키워드가 포함되어 있지 않습니다.")
-        return None, None
     print("📍 Booking 대상:", query)
     params = {"name": query, "locale": "ko"}
     response = requests.get(url, headers=headers, params=params)
@@ -235,39 +245,25 @@ def get_dest_id_from_booking(query):
 async def chat(req: Request):
     data = await req.json()
     user_input = data.get("user_input", "")
-    conversation_context = {
-        "destination": None,
-        "departure_date": None,
-        "return_date": None,
-        "duration": None,
-        "adults_number": None,
-        "children_number": 0,
-        "no_rooms": 1,
-        "flight_asked": False,
-        "hotel_asked": False,
-        "hotel_filter": None,
-        "food_asked": False,
-        "food_filter": None
-    }
-    update_context(user_input, conversation_context)
+    update_context(user_input)
 
-    def memory_text(context):
+    def memory_text():
         parts = []
-        if context["destination"]:
-            parts.append(f"여행지는 {context['destination']}")
-        if context["departure_date"]:
-            parts.append(f"출발일은 {context['departure_date']}")
-        if context["duration"]:
-            parts.append(f"{context['duration']}일 일정")
-        if context["adults_number"]:
-            parts.append(f"성인 {context['adults_number']}명")
-        if context["children_number"]:
-            parts.append(f"어린이 {context['children_number']}명")
+        if conversation_context["destination"]:
+            parts.append(f"여행지는 {conversation_context['destination']}")
+        if conversation_context["departure_date"]:
+            parts.append(f"출발일은 {conversation_context['departure_date']}")
+        if conversation_context["duration"]:
+            parts.append(f"{conversation_context['duration']}일 일정")
+        if conversation_context["adults_number"]:
+            parts.append(f"성인 {conversation_context['adults_number']}명")
+        if conversation_context["children_number"]:
+            parts.append(f"어린이 {conversation_context['children_number']}명")
         return ", ".join(parts) if parts else "없음"
 
     prompt = f"""
     너는 친절한 여행 챗봇이야. 사용자의 대화를 이어서 여행 계획을 도와줘.
-    아래는 지금까지 사용자 정보야: {memory_text(conversation_context)}
+    아래는 지금까지 사용자 정보야: {memory_text()}
     목적지, 출발일, 여행 기간, 성인수/어린이수 정보 중 빠진 것이 있을 때만 자연스럽게 물어봐줘.
     이미 받은 정보는 다시 묻지 말고, 대화를 이어서 부드럽게 안내해줘.
     항상 간결하고 부드럽게 1~2문장으로 대답해줘.
@@ -289,13 +285,12 @@ async def chat(req: Request):
                 dest_id,
                 conversation_context["departure_date"],
                 conversation_context["return_date"],
-                conversation_context.get("hotel_filter") or [],
-                context=conversation_context
+                conversation_context.get("hotel_filter") or []
             )
 
     food_recommendations = []
     if conversation_context["food_asked"] and conversation_context["destination"]:
-        food_recommendations = recommend_food_places(conversation_context["destination"], context=conversation_context)
+        food_recommendations = recommend_food_places(conversation_context["destination"])
 
     # 호텔/맛집 요청 여부 초기화
     conversation_context["hotel_asked"] = False
