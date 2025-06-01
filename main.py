@@ -299,8 +299,7 @@ async def chat(req: Request):
     response_data = {
         "context": conversation_context
     }
-    if not (conversation_context["hotel_asked"] or conversation_context["food_asked"]):
-        response_data["recommendation"] = response.choices[0].message.content.strip()
+    response_data["recommendation"] = response.choices[0].message.content.strip()
     if hotel_recommendations:
         response_data["hotels"] = hotel_recommendations
     if food_recommendations:
