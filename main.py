@@ -135,6 +135,22 @@ def update_context(user_input):
     if child_match:
         conversation_context["children_number"] = korean_number_to_int(child_match.group(1))
 
+    # GPT 응답을 기반으로 호텔/맛집 요청 여부를 보완
+    if conversation_context["destination"] and not conversation_context["hotel_asked"]:
+        if any(k in user_input for k in ["숙소", "호텔"]):
+            conversation_context["hotel_asked"] = True
+            if not conversation_context["hotel_filter"]:
+                conversation_context["hotel_filter"] = extract_hotel_filter_keywords_gpt(user_input)
+
+    if conversation_context["destination"] and not conversation_context["food_asked"]:
+        if any(k in user_input for k in ["맛집", "음식", "카페"]):
+            conversation_context["food_asked"] = True
+            filter_keywords = ["감성", "인스타", "해변", "해변 근처", "분위기 좋은", "인기 많은", "저렴한"]
+            for keyword in filter_keywords:
+                if keyword in user_input:
+                    conversation_context["food_filter"] = keyword
+                    break
+
 def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None):
     url = "https://booking-com.p.rapidapi.com/v1/hotels/search"
     headers = {
@@ -240,6 +256,25 @@ def get_dest_id_from_booking(query):
     except:
         print("❌ dest_id 조회 실패:", response.text)
     return None, None
+
+@app.post("/chat/reset")
+async def reset_context():
+    global conversation_context
+    conversation_context = {
+        "destination": None,
+        "departure_date": None,
+        "return_date": None,
+        "duration": None,
+        "adults_number": None,
+        "children_number": 0,
+        "no_rooms": 1,
+        "flight_asked": False,
+        "hotel_asked": False,
+        "hotel_filter": None,
+        "food_asked": False,
+        "food_filter": None
+    }
+    return {"status": "reset"}
 
 @app.post("/chat")
 async def chat(req: Request):
