@@ -113,11 +113,13 @@ def extract_location_by_regex(text):
 
 def extract_location_keyword_gpt(user_input):
     prompt = """
-    다음 문장에서 숙소 위치 또는 도시 이름을 한 단어로 추출해줘.
-    예를 들어 '오사카 난바역 근처 호텔 찾아줘' → '오사카'
-    '교토 기온 거리 숙소 알려줘' → '교토'
-    '서울 강남 호텔' → '서울'
-    추출할 수 없다면 '없음'으로 답해줘.
+    다음 문장에서 여행 목적지나 도시 이름을 한 단어로 추출해줘.
+    예: '오사카 맛집 추천해줘' → '오사카'
+    예: '서울 숙소 예약하고 싶어' → '서울'
+    예: '도쿄 여행가고 싶어' → '도쿄'
+    예: '후쿠오카 호텔 알려줘' → '후쿠오카'
+    예: '일본에서 놀고 싶어' → '일본'
+    만약 추출할 수 없다면 '없음'으로 답해줘.
     """
     try:
         response = client.chat.completions.create(
@@ -142,15 +144,16 @@ def extract_hotel_filter_keywords_gpt(user_input):
     return [kw.strip() for kw in keywords.split(",")]
 
 def update_context(user_input):
-    # 💡 목적지 키워드는 요청 종류와 무관하게 항상 추출 시도
-    new_dest = extract_location_keyword_gpt(user_input)
-    if new_dest and (not conversation_context["destination"] or new_dest != conversation_context["destination"]):
-        conversation_context["destination"] = new_dest
+    # 💡 목적지 키워드는 요청 종류와 무관하게 항상 추출 시도, 단 이미 있으면 중복 호출 방지
+    if not conversation_context["destination"]:
+        new_dest = extract_location_keyword_gpt(user_input)
+        if new_dest and new_dest.lower() not in ["없음", "none", "null"]:
+            conversation_context["destination"] = new_dest
 
-    if ("숙소" in user_input or "호텔" in user_input) and ("추천" in user_input or "예약" in user_input or "알려줘" in user_input):
+    if any(k in user_input for k in ["숙소", "호텔", "잠잘 곳", "묵을 곳", "자고싶어"]) or ("추천" in user_input or "예약" in user_input or "알려줘" in user_input):
         conversation_context["hotel_asked"] = True
 
-    if any(k in user_input for k in ["맛집", "음식", "카페"]) and ("추천" in user_input or "알려줘" in user_input):
+    if any(k in user_input for k in ["맛집", "음식", "카페", "배고파", "먹을 곳"]) or ("추천" in user_input or "알려줘" in user_input):
         conversation_context["food_asked"] = True
         filter_keywords = ["감성", "인스타", "해변", "해변 근처", "분위기 좋은", "인기 많은", "저렴한"]
         for keyword in filter_keywords:
@@ -238,7 +241,7 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None):
     for hotel in data.get("result", [])[:5]:
         hotels.append({
             "name": hotel.get("hotel_name"),
-            "price": hotel.get("min_total_price"),
+            "price": int(hotel.get("min_total_price", 0)) if hotel.get("min_total_price") else 0,
             "rating": hotel.get("review_score"),
             "url": (
                 f"https://www.booking.com/searchresults.ko.html?"
