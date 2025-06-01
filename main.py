@@ -257,7 +257,7 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None):
 
 def recommend_food_places(destination):
     if not destination:
-        return ["❗ 도시 정보가 없어요. 맛집을 추천하려면 도시를 먼저 알려주세요."]
+        return []
     query = destination + " 맛집"
     if conversation_context.get("food_filter"):
         query = f"{destination} {conversation_context['food_filter']} 맛집"
@@ -277,10 +277,12 @@ def recommend_food_places(destination):
         rating = place.get("rating", "-")
         address = place.get("formatted_address", "주소 정보 없음")
         map_url = f"https://www.google.com/maps/search/?api=1&query={name.replace(' ', '+')}"
-        summary = f"🍽 {name} (⭐ {rating})\n📍 {address}\n🔗 {map_url}"
-        food_list.append(summary)
-    if not food_list:
-        return []
+        food_list.append({
+            "name": name,
+            "rating": rating,
+            "address": address,
+            "url": map_url
+        })
     return food_list
 
 def get_dest_id_from_booking(query):
