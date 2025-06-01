@@ -103,26 +103,27 @@ def extract_hotel_filter_keywords_gpt(user_input):
     return [kw.strip() for kw in keywords.split(",")]
 
 def update_context(user_input):
-    if "호텔" in user_input or "숙소" in user_input:
+    if ("숙소" in user_input or "호텔" in user_input) and ("추천" in user_input or "예약" in user_input or "알려줘" in user_input):
         conversation_context["hotel_asked"] = True
-    if any(k in user_input for k in ["맛집", "음식", "카페"]):
+        if not conversation_context["destination"]:
+            conversation_context["destination"] = extract_location_keyword_gpt(user_input)
+        if not conversation_context["hotel_filter"]:
+            conversation_context["hotel_filter"] = extract_hotel_filter_keywords_gpt(user_input)
+
+    if any(k in user_input for k in ["맛집", "음식", "카페"]) and ("추천" in user_input or "알려줘" in user_input):
         conversation_context["food_asked"] = True
         filter_keywords = ["감성", "인스타", "해변", "해변 근처", "분위기 좋은", "인기 많은", "저렴한"]
         for keyword in filter_keywords:
             if keyword in user_input:
                 conversation_context["food_filter"] = keyword
                 break
-    if not conversation_context["destination"]:
-        conversation_context["destination"] = extract_location_keyword_gpt(user_input)
-    if not conversation_context["hotel_filter"]:
-        conversation_context["hotel_filter"] = extract_hotel_filter_keywords_gpt(user_input)
+
     if not conversation_context["departure_date"] or not conversation_context["return_date"]:
         checkin, checkout = extract_dates_from_message(user_input)
         if checkin and checkout:
             conversation_context["departure_date"] = checkin
             conversation_context["return_date"] = checkout
-            conversation_context["duration"] = (datetime.strptime(checkin, "%Y-%m-%d") - datetime.strptime(checkout, "%Y-%m-%d")).days
-    # Removed all input() calls related to adults_number and children_number
+            conversation_context["duration"] = (datetime.strptime(checkout, "%Y-%m-%d") - datetime.strptime(checkin, "%Y-%m-%d")).days
 
     # 성인 수 인식
     adult_match = re.search(r'성인\s*([0-9]+|[일이삼사오육칠팔구십]+)', user_input)
@@ -291,12 +292,20 @@ async def chat(req: Request):
     if conversation_context["food_asked"] and conversation_context["destination"]:
         food_recommendations = recommend_food_places(conversation_context["destination"])
 
-    return {
+    # 호텔/맛집 요청 여부 초기화
+    conversation_context["hotel_asked"] = False
+    conversation_context["food_asked"] = False
+
+    response_data = {
         "recommendation": response.choices[0].message.content.strip(),
-        "context": conversation_context,
-        "hotels": hotel_recommendations,
-        "foods": food_recommendations if food_recommendations else []
+        "context": conversation_context
     }
+    if hotel_recommendations:
+        response_data["hotels"] = hotel_recommendations
+    if food_recommendations:
+        response_data["foods"] = food_recommendations
+
+    return response_data
 
 if __name__ == "__main__":
     import uvicorn
