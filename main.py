@@ -103,12 +103,12 @@ def extract_hotel_filter_keywords_gpt(user_input):
     return [kw.strip() for kw in keywords.split(",")]
 
 def update_context(user_input):
+    # 💡 목적지 키워드는 요청 종류와 무관하게 항상 추출 시도
+    if not conversation_context["destination"]:
+        conversation_context["destination"] = extract_location_keyword_gpt(user_input)
+
     if ("숙소" in user_input or "호텔" in user_input) and ("추천" in user_input or "예약" in user_input or "알려줘" in user_input):
         conversation_context["hotel_asked"] = True
-        if not conversation_context["destination"]:
-            conversation_context["destination"] = extract_location_keyword_gpt(user_input)
-        if not conversation_context["hotel_filter"]:
-            conversation_context["hotel_filter"] = extract_hotel_filter_keywords_gpt(user_input)
 
     if any(k in user_input for k in ["맛집", "음식", "카페"]) and ("추천" in user_input or "알려줘" in user_input):
         conversation_context["food_asked"] = True
