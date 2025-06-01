@@ -14,20 +14,23 @@ client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-conversation_context = {
-    "destination": None,
-    "departure_date": None,
-    "return_date": None,
-    "duration": None,
-    "adults_number": None,
-    "children_number": 0,
-    "no_rooms": 1,
-    "flight_asked": False,
-    "hotel_asked": False,
-    "hotel_filter": None,
-    "food_asked": False,
-    "food_filter": None
-}
+memory_store = {}
+
+def init_context():
+    return {
+        "destination": None,
+        "departure_date": None,
+        "return_date": None,
+        "duration": None,
+        "adults_number": None,
+        "children_number": 0,
+        "no_rooms": 1,
+        "flight_asked": False,
+        "hotel_asked": False,
+        "hotel_filter": None,
+        "food_asked": False,
+        "food_filter": None
+    }
 
 def korean_number_to_int(text):
     mapping = {'일':1, '이':2, '삼':3, '사':4, '오':5, '육':6, '칠':7, '팔':8, '구':9, '십':10}
@@ -143,7 +146,7 @@ def extract_hotel_filter_keywords_gpt(user_input):
     keywords = response.choices[0].message.content.strip()
     return [kw.strip() for kw in keywords.split(",")]
 
-def update_context(user_input):
+def update_context(user_input, conversation_context):
     # 💡 목적지 키워드는 요청 종류와 무관하게 항상 추출 시도, 단 이미 있으면 중복 호출 방지
     if not conversation_context["destination"]:
         new_dest = extract_location_keyword_gpt(user_input)
@@ -196,7 +199,7 @@ def update_context(user_input):
                     conversation_context["food_filter"] = keyword
                     break
 
-def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None):
+def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, context=None):
     url = "https://booking-com.p.rapidapi.com/v1/hotels/search"
     headers = {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
@@ -207,13 +210,13 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None):
         "checkout_date": checkout,
         "dest_id": dest_id,
         "dest_type": "city",
-        "adults_number": conversation_context.get("adults_number", 2),
+        "adults_number": context.get("adults_number", 2),
         "units": "metric",
         "order_by": "popularity",
         "locale": "ko",
         "currency": "KRW",
         "filter_by_currency": "KRW",
-        "room_number": conversation_context.get("no_rooms", 1),
+        "room_number": context.get("no_rooms", 1),
         "page_number": "0"
     }
     categories_map = {
@@ -250,22 +253,22 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None):
                 f"ss={hotel.get('hotel_name')}&"
                 f"checkin_year={checkin[:4]}&checkin_month={int(checkin[5:7])}&checkin_monthday={int(checkin[8:10])}&"
                 f"checkout_year={checkout[:4]}&checkout_month={int(checkout[5:7])}&checkout_monthday={int(checkout[8:10])}&"
-                f"group_adults={conversation_context.get('adults_number',2)}&group_children={conversation_context.get('children_number',0)}&no_rooms={conversation_context.get('no_rooms',1)}"
+                f"group_adults={context.get('adults_number',2)}&group_children={context.get('children_number',0)}&no_rooms={context.get('no_rooms',1)}"
             )
         })
     return hotels
 
-def recommend_food_places(destination):
+def recommend_food_places(destination, context=None):
     if not destination:
         return []
     query = destination + " 맛집"
-    if conversation_context.get("food_filter"):
-        query = f"{destination} {conversation_context['food_filter']} 맛집"
+    if context.get("food_filter"):
+        query = f"{destination} {context['food_filter']} 맛집"
     url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
     params = {
         "query": query,
         "language": "ko",
-        "region": conversation_context.get("destination", ""),
+        "region": context.get("destination", ""),
         "key": GOOGLE_API_KEY
     }
     response = requests.get(url, params=params)
@@ -305,42 +308,40 @@ def get_dest_id_from_booking(query):
     return None, None
 
 @app.post("/chat/reset")
-async def reset_context():
-    global conversation_context
-    conversation_context = {
-        "destination": None,
-        "departure_date": None,
-        "return_date": None,
-        "duration": None,
-        "adults_number": None,
-        "children_number": 0,
-        "no_rooms": 1,
-        "flight_asked": False,
-        "hotel_asked": False,
-        "hotel_filter": None,
-        "food_asked": False,
-        "food_filter": None
-    }
+async def reset_context(req: Request):
+    data = await req.json()
+    user_id = data.get("user_id", "default")
+    chat_id = data.get("chat_id", "default")
+    context_key = f"{user_id}_{chat_id}"
+    memory_store[context_key] = init_context()
     return {"status": "reset"}
 
 @app.post("/chat")
 async def chat(req: Request):
     data = await req.json()
     user_input = data.get("user_input", "")
-    update_context(user_input)
+    user_id = data.get("user_id", "default")
+    chat_id = data.get("chat_id", "default")
+    context_key = f"{user_id}_{chat_id}"
+
+    if context_key not in memory_store:
+        memory_store[context_key] = init_context()
+
+    context = memory_store[context_key]
+    update_context(user_input, context)
 
     def memory_text():
         parts = []
-        if conversation_context["destination"]:
-            parts.append(f"여행지는 {conversation_context['destination']}")
-        if conversation_context["departure_date"]:
-            parts.append(f"출발일은 {conversation_context['departure_date']}")
-        if conversation_context["duration"]:
-            parts.append(f"{conversation_context['duration']}일 일정")
-        if conversation_context["adults_number"]:
-            parts.append(f"성인 {conversation_context['adults_number']}명")
-        if conversation_context["children_number"]:
-            parts.append(f"어린이 {conversation_context['children_number']}명")
+        if context["destination"]:
+            parts.append(f"여행지는 {context['destination']}")
+        if context["departure_date"]:
+            parts.append(f"출발일은 {context['departure_date']}")
+        if context["duration"]:
+            parts.append(f"{context['duration']}일 일정")
+        if context["adults_number"]:
+            parts.append(f"성인 {context['adults_number']}명")
+        if context["children_number"]:
+            parts.append(f"어린이 {context['children_number']}명")
         return ", ".join(parts) if parts else "없음"
 
     prompt = f"""
@@ -360,26 +361,27 @@ async def chat(req: Request):
     )
 
     hotel_recommendations = []
-    if conversation_context["hotel_asked"] and conversation_context["destination"]:
-        dest_name, dest_id = get_dest_id_from_booking(conversation_context["destination"])
+    if context["hotel_asked"] and context["destination"]:
+        dest_name, dest_id = get_dest_id_from_booking(context["destination"])
         if dest_id:
             hotel_recommendations = search_hotels_by_dest_id(
                 dest_id,
-                conversation_context["departure_date"],
-                conversation_context["return_date"],
-                conversation_context.get("hotel_filter") or []
+                context["departure_date"],
+                context["return_date"],
+                context.get("hotel_filter") or [],
+                context=context
             )
 
     food_recommendations = []
-    if conversation_context["food_asked"] and conversation_context["destination"]:
-        food_recommendations = recommend_food_places(conversation_context["destination"])
+    if context["food_asked"] and context["destination"]:
+        food_recommendations = recommend_food_places(context["destination"], context=context)
 
     # 호텔/맛집 요청 여부 초기화
-    conversation_context["hotel_asked"] = False
-    conversation_context["food_asked"] = False
+    context["hotel_asked"] = False
+    context["food_asked"] = False
 
     response_data = {
-        "context": conversation_context
+        "context": context
     }
     response_data["recommendation"] = response.choices[0].message.content.strip()
     if hotel_recommendations:
