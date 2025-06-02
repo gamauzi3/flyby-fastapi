@@ -313,7 +313,20 @@ async def reset_context(req: Request):
     user_id = data.get("user_id", "default")
     chat_id = data.get("chat_id", "default")
     context_key = f"{user_id}_{chat_id}"
-    memory_store[context_key] = init_context()
+    memory_store[context_key] = {
+        "destination": None,
+        "departure_date": None,
+        "return_date": None,
+        "duration": None,
+        "adults_number": None,
+        "children_number": 0,
+        "no_rooms": 1,
+        "flight_asked": False,
+        "hotel_asked": False,
+        "hotel_filter": None,
+        "food_asked": False,
+        "food_filter": None
+    }
     return {"status": "reset"}
 
 @app.post("/chat")
