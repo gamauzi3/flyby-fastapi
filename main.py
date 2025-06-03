@@ -246,13 +246,8 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
     for hotel in data.get("result", [])[:5]:
         lat = hotel.get("latitude")
         lon = hotel.get("longitude")
-        address = None
-        if lat and lon:
-            geo_url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={GOOGLE_API_KEY}"
-            geo_resp = requests.get(geo_url)
-            geo_data = geo_resp.json()
-            if geo_data.get("results"):
-                address = geo_data["results"][0].get("formatted_address")
+        # 주소를 Google Maps 검색 링크로 대체
+        address = f"https://www.google.com/maps/search/?q={urllib.parse.quote(hotel.get('hotel_name', ''))}"
         hotels.append({
             "name": hotel.get("hotel_name"),
             "price": int(hotel.get("min_total_price", 0)) if hotel.get("min_total_price") else 0,
