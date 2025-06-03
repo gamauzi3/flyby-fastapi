@@ -246,13 +246,14 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
     for hotel in data.get("result", [])[:5]:
         lat = hotel.get("latitude")
         lon = hotel.get("longitude")
-        # 주소를 Google Maps 검색 링크로 대체
-        address = f"https://www.google.com/maps/search/?q={urllib.parse.quote(hotel.get('hotel_name', ''))}"
+        real_address = hotel.get("address", "주소 정보 없음")
+        map_link = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(hotel.get('hotel_name', ''))}"
         hotels.append({
             "name": hotel.get("hotel_name"),
             "price": int(hotel.get("min_total_price", 0)) if hotel.get("min_total_price") else 0,
             "rating": hotel.get("review_score"),
-            "address": address,
+            "address": real_address,
+            "mapLink": map_link,
             "latitude": lat,
             "longitude": lon,
             "url": (
