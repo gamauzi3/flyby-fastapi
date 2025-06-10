@@ -29,7 +29,8 @@ def init_context():
         "hotel_asked": False,
         "hotel_filter": None,
         "food_asked": False,
-        "food_filter": None
+        "food_filter": None,
+        "tourist_asked": False
     }
 
 def korean_number_to_int(text):
@@ -166,6 +167,10 @@ def update_context(user_input, conversation_context):
                 conversation_context["food_filter"] = keyword
                 break
 
+    # Tourist spot request detection
+    if any(k in user_input for k in ["관광지", "명소", "볼거리", "관광명소", "가볼만한 곳"]):
+        conversation_context["tourist_asked"] = True
+
     if not conversation_context["departure_date"] or not conversation_context["return_date"]:
         checkin, checkout = extract_dates_from_message(user_input)
         if checkin and checkout:
@@ -296,6 +301,35 @@ def recommend_food_places(destination, context=None):
         })
     return food_list
 
+def recommend_tourist_spots(destination, context=None):
+    if not destination:
+        return []
+    query = destination + " 관광명소"
+    url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+    params = {
+        "query": query,
+        "type": "tourist_attraction",
+        "language": "ko",
+        "region": context.get("destination", "") if context else "",
+        "key": GOOGLE_API_KEY
+    }
+    response = requests.get(url, params=params)
+    results = response.json().get("results", [])
+    print("🗺️ Tourist Attraction 결과:", results)
+    tourist_list = []
+    for place in results[:5]:
+        name = place.get("name")
+        rating = place.get("rating", "-")
+        address = place.get("formatted_address", "주소 정보 없음")
+        map_url = f"https://www.google.com/maps/search/?api=1&query={name.replace(' ', '+')}"
+        tourist_list.append({
+            "name": name,
+            "rating": rating,
+            "address": address,
+            "url": map_url
+        })
+    return tourist_list
+
 def get_dest_id_from_booking(query):
     url = "https://booking-com.p.rapidapi.com/v1/hotels/locations"
     headers = {
@@ -333,7 +367,8 @@ async def reset_context(req: Request):
         "hotel_asked": False,
         "hotel_filter": None,
         "food_asked": False,
-        "food_filter": None
+        "food_filter": None,
+        "tourist_asked": False
     }
     return {"status": "reset"}
 
@@ -397,9 +432,14 @@ async def chat(req: Request):
     if context["food_asked"] and context["destination"]:
         food_recommendations = recommend_food_places(context["destination"], context=context)
 
-    # 호텔/맛집 요청 여부 초기화
+    tourist_recommendations = []
+    if context.get("tourist_asked") and context["destination"]:
+        tourist_recommendations = recommend_tourist_spots(context["destination"], context=context)
+
+    # 호텔/맛집/관광지 요청 여부 초기화
     context["hotel_asked"] = False
     context["food_asked"] = False
+    context["tourist_asked"] = False
 
     response_data = {
         "context": context
@@ -409,6 +449,8 @@ async def chat(req: Request):
         response_data["hotels"] = hotel_recommendations
     if food_recommendations:
         response_data["foods"] = food_recommendations
+    if tourist_recommendations:
+        response_data["tourist_spots"] = tourist_recommendations
 
     return response_data
 
