@@ -280,7 +280,7 @@ def recommend_food_places(destination, context=None):
     url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
     params = {
         "query": query,
-        "language": "ko",
+        "language": "en",
         "region": context.get("destination", ""),
         "key": GOOGLE_API_KEY
     }
@@ -309,7 +309,7 @@ def recommend_tourist_spots(destination, context=None):
     params = {
         "query": query,
         "type": "tourist_attraction",
-        "language": "ko",
+        "language": "en",
         "region": context.get("destination", "") if context else "",
         "key": GOOGLE_API_KEY
     }
