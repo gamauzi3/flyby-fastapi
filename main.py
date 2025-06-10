@@ -233,13 +233,14 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
         "조식포함": ["mealplan::1"],
         "반려동물": ["facility::5"]
     }
-    categories = []
+    categories = ["review_score::8"]  # 무조건 평점 8점 이상만
+
     if filter_keywords:
         for kw in filter_keywords:
             if kw in categories_map:
                 categories.extend(categories_map[kw])
-    if categories:
-        querystring["categories_filter_ids"] = ",".join(categories)
+
+    querystring["categories_filter_ids"] = ",".join(categories)
 
     response = requests.get(url, headers=headers, params=querystring)
     if response.status_code != 200:
