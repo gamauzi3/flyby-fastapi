@@ -233,7 +233,7 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
         "조식포함": ["mealplan::1"],
         "반려동물": ["facility::5"]
     }
-    categories = ["review_score::8"]  # 무조건 평점 8점 이상만
+    categories = []
 
     if filter_keywords:
         for kw in filter_keywords:
@@ -249,7 +249,9 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
     print("📍 Booking 검색 응답 코드:", response.status_code)
     data = response.json()
     hotels = []
-    for hotel in data.get("result", [])[:5]:
+    for hotel in data.get("result", []):
+        if hotel.get("review_score") is None:
+            continue  # 리뷰 점수가 없는 호텔은 제외
         lat = hotel.get("latitude")
         lon = hotel.get("longitude")
         real_address = hotel.get("address", "주소 정보 없음")
@@ -270,6 +272,8 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
                 f"group_adults={context.get('adults_number',2)}&group_children={context.get('children_number',0)}&no_rooms={context.get('no_rooms',1)}"
             )
         })
+        if len(hotels) >= 5:
+            break
     return hotels
 
 def recommend_food_places(destination, context=None):
