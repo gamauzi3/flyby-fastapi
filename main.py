@@ -233,7 +233,7 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
         "조식포함": ["mealplan::1"],
         "반려동물": ["facility::5"]
     }
-    categories = []
+    categories = ["price::1", "review_score::8"]
 
     if filter_keywords:
         for kw in filter_keywords:
