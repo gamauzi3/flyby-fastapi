@@ -286,7 +286,7 @@ def recommend_food_places(destination, context=None):
     params = {
         "query": query,
         "language": "ko",
-        "region": context.get("destination", ""),
+       # "region": context.get("destination", ""),
         "key": GOOGLE_API_KEY
     }
     response = requests.get(url, params=params)
@@ -315,7 +315,7 @@ def recommend_tourist_spots(destination, context=None):
         "query": query,
         "type": "tourist_attraction",
         "language": "ko",
-        "region": context.get("destination", "") if context else "",
+       # "region": context.get("destination", "") if context else "",
         "key": GOOGLE_API_KEY
     }
     response = requests.get(url, params=params)
