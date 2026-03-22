@@ -52,6 +52,7 @@ def korean_number_to_int(text):
     return result
 
 def extract_dates_from_message(message):
+    # Korean format: 2025년 6월 20일
     manual_match = re.search(r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일', message)
     if manual_match:
         year = int(manual_match.group(1))
@@ -59,6 +60,7 @@ def extract_dates_from_message(message):
         day = int(manual_match.group(3))
         departure = datetime(year, month, day)
     else:
+        # Korean format: 6월 20일
         manual_match = re.search(r'(\d{1,2})월\s*(\d{1,2})일', message)
         if manual_match:
             now = datetime.now()
@@ -69,20 +71,47 @@ def extract_dates_from_message(message):
                 year += 1
             departure = datetime(year, month, day)
         else:
-            date_match = search_dates(message, languages=["ko"])
-            if date_match:
-                departure = date_match[0][1]
+            # English format: Jun 20, June 20, 6/20, etc.
+            en_match = re.search(r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})', message, re.IGNORECASE)
+            if en_match:
+                try:
+                    date_match = search_dates(message, languages=["en"])
+                    if date_match:
+                        departure = date_match[0][1]
+                    else:
+                        departure = None
+                except:
+                    departure = None
             else:
-                departure = None
+                # Fallback: try dateparser for Korean
+                try:
+                    date_match = search_dates(message, languages=["ko", "en"])
+                    if date_match:
+                        departure = date_match[0][1]
+                    else:
+                        departure = None
+                except:
+                    departure = None
 
     nights = None
+    # Korean: X박 X일
     stay_match = re.search(r'([0-9]+|[일이삼사오육칠팔구십]+)\s*박\s*([0-9]+|[일이삼사오육칠팔구십]+)\s*일', message)
     if stay_match:
         nights = korean_number_to_int(stay_match.group(2))
     else:
-        duration_match = re.search(r'([0-9]+|[일이삼사오육칠팔구십]+)\s*일', message)
-        if duration_match:
-            nights = korean_number_to_int(duration_match.group(1))
+        # English: X nights, X days, X-day trip
+        en_night_match = re.search(r'(\d+)\s*night', message, re.IGNORECASE)
+        en_day_match = re.search(r'(\d+)\s*day', message, re.IGNORECASE)
+        if en_night_match:
+            nights = int(en_night_match.group(1)) + 1  # nights + 1 = days
+        elif en_day_match:
+            nights = int(en_day_match.group(1))
+        else:
+            # Korean: X일
+            duration_match = re.search(r'([0-9]+|[일이삼사오육칠팔구십]+)\s*일', message)
+            if duration_match:
+                nights = korean_number_to_int(duration_match.group(1))
+
     if departure and nights:
         checkin = departure.date()
         checkout = (departure + timedelta(days=nights)).date()
@@ -91,39 +120,51 @@ def extract_dates_from_message(message):
 
 def extract_location_by_regex(text):
     city_keywords = [
-        # 🇯🇵 일본
+        # 🇯🇵 일본 (Korean + English)
         "오사카", "도쿄", "후쿠오카", "교토", "삿포로", "나고야", "나라", "요코하마",
+        "Osaka", "Tokyo", "Fukuoka", "Kyoto", "Sapporo", "Nagoya", "Nara", "Yokohama",
         # 🇰🇷 한국
         "서울", "부산", "제주", "인천", "대구", "광주", "대전", "수원",
+        "Seoul", "Busan", "Jeju", "Incheon", "Daegu", "Gwangju", "Daejeon", "Suwon",
         # 🇺🇸 미국
         "뉴욕", "로스앤젤레스", "샌프란시스코", "라스베가스", "시카고",
+        "New York", "Los Angeles", "San Francisco", "Las Vegas", "Chicago",
         # 🇫🇷 프랑스
-        "파리", "리옹", "마르세유",
+        "파리", "리옹", "마르세유", "Paris", "Lyon", "Marseille",
         # 🇮🇹 이탈리아
-        "로마", "밀라노", "베네치아", "피렌체",
+        "로마", "밀라노", "베네치아", "피렌체", "Rome", "Milan", "Venice", "Florence",
         # 🇪🇸 스페인
-        "바르셀로나", "마드리드", "세비야",
+        "바르셀로나", "마드리드", "세비야", "Barcelona", "Madrid", "Seville",
         # 🇬🇧 영국
-        "런던", "에딘버러", "맨체스터",
+        "런던", "에딘버러", "맨체스터", "London", "Edinburgh", "Manchester",
         # 🇹🇭 태국
-        "방콕", "푸켓", "치앙마이",
-        # 기타 주요 여행지
-        "하와이", "발리", "싱가포르", "홍콩", "마카오", "두바이"
+        "방콕", "푸켓", "치앙마이", "Bangkok", "Phuket", "Chiang Mai",
+        # 🇦🇺 호주
+        "Melbourne", "Sydney", "Brisbane", "Perth",
+        "멜버른", "시드니", "브리즈번",
+        # 기타
+        "하와이", "발리", "싱가포르", "홍콩", "마카오", "두바이",
+        "Hawaii", "Bali", "Singapore", "Hong Kong", "Macau", "Dubai",
+        "Taipei", "Shanghai", "Beijing", "Amsterdam", "Berlin", "Prague",
     ]
+    text_lower = text.lower()
     for city in city_keywords:
-        if city in text:
+        if city.lower() in text_lower:
             return city
     return None
 
 def extract_location_keyword_gpt(user_input):
     prompt = """
-    다음 문장에서 여행 목적지나 도시 이름을 한 단어로 추출해줘.
-    예: '오사카 맛집 추천해줘' → '오사카'
-    예: '서울 숙소 예약하고 싶어' → '서울'
-    예: '도쿄 여행가고 싶어' → '도쿄'
-    예: '후쿠오카 호텔 알려줘' → '후쿠오카'
-    예: '일본에서 놀고 싶어' → '일본'
-    만약 추출할 수 없다면 '없음'으로 답해줘.
+    Extract the travel destination or city name from the following sentence in one word.
+    The input can be in Korean or English.
+    Examples:
+    '오사카 맛집 추천해줘' → 'Osaka'
+    'Recommend hotels in Tokyo' → 'Tokyo'
+    'I want to visit Paris' → 'Paris'
+    '서울 숙소 예약하고 싶어' → 'Seoul'
+    'Find restaurants in Melbourne' → 'Melbourne'
+    If no destination found, answer '없음'.
+    Always return the English name of the city.
     """
     try:
         response = client.chat.completions.create(
@@ -139,7 +180,7 @@ def extract_location_keyword_gpt(user_input):
         return extract_location_by_regex(user_input)
 
 def extract_hotel_filter_keywords_gpt(user_input):
-    prompt = "다음 문장에서 호텔 특성 키워드를 모두 추출해줘. 쉼표로 구분해서 한글 키워드만. 예: '수영장 있는 가성비 좋은 호텔' → 수영장, 가성비"
+    prompt = "Extract hotel preference keywords from the sentence. Comma-separated. Examples: 'budget hotel with pool' → pool, budget. '가성비 좋은 호텔' → 가성비"
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}]
@@ -154,21 +195,21 @@ def update_context(user_input, conversation_context):
         if new_dest and new_dest.lower() not in ["없음", "none", "null"]:
             conversation_context["destination"] = new_dest
 
-    if any(k in user_input for k in ["숙소", "호텔", "잠잘 곳", "묵을 곳", "자고싶어"]):
+    if any(k in user_input.lower() for k in ["숙소", "호텔", "잠잘 곳", "묵을 곳", "자고싶어", "hotel", "accommodation", "stay", "lodge", "hostel"]):
         conversation_context["hotel_asked"] = True
         if not conversation_context["hotel_filter"]:
             conversation_context["hotel_filter"] = extract_hotel_filter_keywords_gpt(user_input)
 
-    if any(k in user_input for k in ["맛집", "음식", "카페", "배고파", "먹을 곳"]):
+    if any(k in user_input.lower() for k in ["맛집", "음식", "카페", "배고파", "먹을 곳", "restaurant", "food", "cafe", "dining", "eat", "cuisine"]):
         conversation_context["food_asked"] = True
-        filter_keywords = ["감성", "인스타", "해변", "해변 근처", "분위기 좋은", "인기 많은", "저렴한"]
+        filter_keywords = ["감성", "인스타", "해변", "해변 근처", "분위기 좋은", "인기 많은", "저렴한", "vibe", "instagram", "beach", "beachside", "cozy", "popular", "cheap", "budget"]
         for keyword in filter_keywords:
             if keyword in user_input:
                 conversation_context["food_filter"] = keyword
                 break
 
     # Tourist spot request detection
-    if any(k in user_input for k in ["관광지", "명소", "볼거리", "관광명소", "가볼만한 곳"]):
+    if any(k in user_input.lower() for k in ["관광지", "명소", "볼거리", "관광명소", "가볼만한 곳", "attraction", "sightseeing", "tourist", "visit", "landmark", "places to visit"]):
         conversation_context["tourist_asked"] = True
 
     if not conversation_context["departure_date"] or not conversation_context["return_date"]:
@@ -178,27 +219,35 @@ def update_context(user_input, conversation_context):
             conversation_context["return_date"] = checkout
             conversation_context["duration"] = (datetime.strptime(checkout, "%Y-%m-%d") - datetime.strptime(checkin, "%Y-%m-%d")).days
 
-    # 성인 수 인식
+    # 성인 수 인식 (Korean + English)
     adult_match = re.search(r'성인\s*([0-9]+|[일이삼사오육칠팔구십]+)', user_input)
     if adult_match:
         conversation_context["adults_number"] = korean_number_to_int(adult_match.group(1))
+    else:
+        en_adult_match = re.search(r'(\d+)\s*adult', user_input, re.IGNORECASE)
+        if en_adult_match:
+            conversation_context["adults_number"] = int(en_adult_match.group(1))
 
-    # 어린이 수 인식
+    # 어린이 수 인식 (Korean + English)
     child_match = re.search(r'어린이\s*([0-9]+|[일이삼사오육칠팔구십]+)', user_input)
     if child_match:
         conversation_context["children_number"] = korean_number_to_int(child_match.group(1))
+    else:
+        en_child_match = re.search(r'(\d+)\s*child', user_input, re.IGNORECASE)
+        if en_child_match:
+            conversation_context["children_number"] = int(en_child_match.group(1))
 
     # GPT 응답을 기반으로 호텔/맛집 요청 여부를 보완
     if conversation_context["destination"] and not conversation_context["hotel_asked"]:
-        if any(k in user_input for k in ["숙소", "호텔"]):
+        if any(k in user_input.lower() for k in ["숙소", "호텔", "hotel", "accommodation", "stay"]):
             conversation_context["hotel_asked"] = True
             if not conversation_context["hotel_filter"]:
                 conversation_context["hotel_filter"] = extract_hotel_filter_keywords_gpt(user_input)
 
     if conversation_context["destination"] and not conversation_context["food_asked"]:
-        if any(k in user_input for k in ["맛집", "음식", "카페"]):
+        if any(k in user_input.lower() for k in ["맛집", "음식", "카페", "restaurant", "food", "cafe", "dining"]):
             conversation_context["food_asked"] = True
-            filter_keywords = ["감성", "인스타", "해변", "해변 근처", "분위기 좋은", "인기 많은", "저렴한"]
+            filter_keywords = ["감성", "인스타", "해변", "해변 근처", "분위기 좋은", "인기 많은", "저렴한", "vibe", "instagram", "beach", "beachside", "cozy", "popular", "cheap", "budget"]
             for keyword in filter_keywords:
                 if keyword in user_input:
                     conversation_context["food_filter"] = keyword
@@ -218,7 +267,7 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
         "adults_number": context.get("adults_number", 2),
         "units": "metric",
         "order_by": "popularity",
-        "locale": "ko",
+        "locale": "en-us",
         "currency": "KRW",
         "filter_by_currency": "KRW",
         "room_number": context.get("no_rooms", 1),
@@ -226,12 +275,20 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
     }
     categories_map = {
         "럭셔리": ["class::5", "class::4"],
+        "luxury": ["class::5", "class::4"],
         "저렴한": ["price::1"],
+        "cheap": ["price::1"],
+        "budget": ["price::1"],
         "가성비": ["price::1", "review_score::8"],
+        "value": ["price::1", "review_score::8"],
         "수영장": ["facility::11"],
+        "pool": ["facility::11"],
         "조식": ["mealplan::1"],
         "조식포함": ["mealplan::1"],
-        "반려동물": ["facility::5"]
+        "breakfast": ["mealplan::1"],
+        "반려동물": ["facility::5"],
+        "pet": ["facility::5"],
+        "pet-friendly": ["facility::5"],
     }
     categories = ["price::1", "review_score::8"]
 
@@ -279,9 +336,9 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
 def recommend_food_places(destination, context=None):
     if not destination:
         return []
-    query = destination + " 맛집"
+    query = destination + " restaurant"
     if context.get("food_filter"):
-        query = f"{destination} {context['food_filter']} 맛집"
+        query = f"{destination} {context['food_filter']} restaurant"
     url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
     params = {
         "query": query,
@@ -309,7 +366,7 @@ def recommend_food_places(destination, context=None):
 def recommend_tourist_spots(destination, context=None):
     if not destination:
         return []
-    query = destination + " 관광명소"
+    query = destination + " tourist attraction"
     url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
     params = {
         "query": query,
@@ -342,7 +399,7 @@ def get_dest_id_from_booking(query):
         "X-RapidAPI-Host": "booking-com.p.rapidapi.com"
     }
     print("📍 Booking 대상:", query)
-    params = {"name": query, "locale": "ko"}
+    params = {"name": query, "locale": "en-us"}
     response = requests.get(url, headers=headers, params=params)
     try:
         results = response.json()
@@ -394,23 +451,23 @@ async def chat(req: Request):
     def memory_text():
         parts = []
         if context["destination"]:
-            parts.append(f"여행지는 {context['destination']}")
+            parts.append(f"Destination: {context['destination']}")
         if context["departure_date"]:
-            parts.append(f"출발일은 {context['departure_date']}")
+            parts.append(f"Departure: {context['departure_date']}")
         if context["duration"]:
-            parts.append(f"{context['duration']}일 일정")
+            parts.append(f"{context['duration']}-day trip")
         if context["adults_number"]:
-            parts.append(f"성인 {context['adults_number']}명")
+            parts.append(f"{context['adults_number']} adults")
         if context["children_number"]:
-            parts.append(f"어린이 {context['children_number']}명")
-        return ", ".join(parts) if parts else "없음"
+            parts.append(f"{context['children_number']} children")
+        return ", ".join(parts) if parts else "None"
 
     prompt = f"""
-    너는 친절한 여행 챗봇이야. 사용자의 대화를 이어서 여행 계획을 도와줘.
-    아래는 지금까지 사용자 정보야: {memory_text()}
-    목적지, 출발일, 여행 기간, 성인수/어린이수 정보 중 빠진 것이 있을 때만 자연스럽게 물어봐줘.
-    이미 받은 정보는 다시 묻지 말고, 대화를 이어서 부드럽게 안내해줘.
-    항상 간결하고 부드럽게 1~2문장으로 대답해줘.
+    You are a friendly travel chatbot. Continue the conversation to help the user plan their trip.
+    Here is the user's info so far: {memory_text()}
+    Only ask about missing info (destination, departure date, duration, number of travelers) naturally.
+    Don't re-ask for info already provided. Continue the conversation smoothly.
+    Always reply concisely in 1-2 sentences in English.
     """
 
     response = client.chat.completions.create(
