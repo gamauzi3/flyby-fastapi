@@ -311,7 +311,7 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
             continue  # 리뷰 점수가 없는 호텔은 제외
         lat = hotel.get("latitude")
         lon = hotel.get("longitude")
-        real_address = hotel.get("address", "주소 정보 없음")
+        real_address = hotel.get("address", "Address not available")
         map_link = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(hotel.get('hotel_name', ''))}"
         hotels.append({
             "name": hotel.get("hotel_name"),
@@ -336,9 +336,9 @@ def search_hotels_by_dest_id(dest_id, checkin, checkout, filter_keywords=None, c
 def recommend_food_places(destination, context=None):
     if not destination:
         return []
-    query = destination + " restaurant"
+    query = "restaurant in " + destination
     if context.get("food_filter"):
-        query = f"{destination} {context['food_filter']} restaurant"
+        query = f"{context['food_filter']} restaurant in {destination}"
     url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
     params = {
         "query": query,
@@ -347,13 +347,18 @@ def recommend_food_places(destination, context=None):
         "key": GOOGLE_API_KEY
     }
     response = requests.get(url, params=params)
-    results = response.json().get("results", [])
-    print("🍴 Google 결과:", results)
+    data = response.json()
+    print(f"🍴 Google Places status: {data.get('status')}, error: {data.get('error_message', 'none')}")
+    if data.get("status") != "OK":
+        print(f"❌ Google Places API error: {data}")
+        return []
+    results = data.get("results", [])
+    print(f"🍴 Google results count: {len(results)}")
     food_list = []
     for place in results[:5]:
         name = place.get("name")
         rating = place.get("rating", "-")
-        address = place.get("formatted_address", "주소 정보 없음")
+        address = place.get("formatted_address", "Address not available")
         map_url = f"https://www.google.com/maps/search/?api=1&query={name.replace(' ', '+')}"
         food_list.append({
             "name": name,
@@ -366,7 +371,7 @@ def recommend_food_places(destination, context=None):
 def recommend_tourist_spots(destination, context=None):
     if not destination:
         return []
-    query = destination + " tourist attraction"
+    query = "tourist attraction in " + destination
     url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
     params = {
         "query": query,
@@ -376,13 +381,18 @@ def recommend_tourist_spots(destination, context=None):
         "key": GOOGLE_API_KEY
     }
     response = requests.get(url, params=params)
-    results = response.json().get("results", [])
-    print("🗺️ Tourist Attraction 결과:", results)
+    data = response.json()
+    print(f"🗺️ Google Places status: {data.get('status')}, error: {data.get('error_message', 'none')}")
+    if data.get("status") != "OK":
+        print(f"❌ Google Places API error: {data}")
+        return []
+    results = data.get("results", [])
+    print(f"🗺️ Tourist results count: {len(results)}")
     tourist_list = []
     for place in results[:5]:
         name = place.get("name")
         rating = place.get("rating", "-")
-        address = place.get("formatted_address", "주소 정보 없음")
+        address = place.get("formatted_address", "Address not available")
         map_url = f"https://www.google.com/maps/search/?api=1&query={name.replace(' ', '+')}"
         tourist_list.append({
             "name": name,
@@ -410,6 +420,92 @@ def get_dest_id_from_booking(query):
     except:
         print("❌ dest_id 조회 실패:", response.text)
     return None, None
+
+@app.get("/")
+async def health():
+    """Health check - also verifies API keys are set"""
+    return {
+        "status": "ok",
+        "openai_key_set": bool(os.getenv("OPENAI_API_KEY")),
+        "rapidapi_key_set": bool(RAPIDAPI_KEY),
+        "google_key_set": bool(GOOGLE_API_KEY),
+        "google_key_preview": (GOOGLE_API_KEY[:8] + "...") if GOOGLE_API_KEY else "NOT SET"
+    }
+
+@app.get("/test-google")
+async def test_google():
+    """Test Google Places API directly"""
+    if not GOOGLE_API_KEY:
+        return {"error": "GOOGLE_API_KEY is not set in environment variables"}
+    url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+    params = {"query": "restaurant in Tokyo", "language": "en", "key": GOOGLE_API_KEY}
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        return {
+            "status_code": response.status_code,
+            "api_status": data.get("status"),
+            "error_message": data.get("error_message", "none"),
+            "result_count": len(data.get("results", [])),
+            "first_result": data.get("results", [{}])[0].get("name") if data.get("results") else "no results"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/debug-chat")
+async def debug_chat(req: Request):
+    """Debug endpoint - traces every step of the chat flow"""
+    data = await req.json()
+    user_input = data.get("user_input", "")
+    debug_log = []
+
+    # Step 1: Test context extraction
+    test_context = init_context()
+    debug_log.append(f"1. Input: '{user_input}'")
+
+    # Step 2: Destination extraction
+    dest = extract_location_keyword_gpt(user_input)
+    test_context["destination"] = dest
+    debug_log.append(f"2. Extracted destination: '{dest}'")
+
+    # Step 3: Keyword detection
+    input_lower = user_input.lower()
+    hotel_match = any(k in input_lower for k in ["숙소", "호텔", "hotel", "accommodation", "stay"])
+    food_match = any(k in input_lower for k in ["맛집", "음식", "카페", "restaurant", "food", "cafe", "dining", "eat"])
+    tourist_match = any(k in input_lower for k in ["관광지", "명소", "attraction", "sightseeing", "tourist", "visit", "landmark", "places to visit"])
+    debug_log.append(f"3. Keywords - hotel:{hotel_match}, food:{food_match}, tourist:{tourist_match}")
+
+    # Step 4: Try Places API if food detected
+    food_results = []
+    if food_match and dest:
+        try:
+            food_results = recommend_food_places(dest, context=test_context)
+            debug_log.append(f"4. Food API returned {len(food_results)} results")
+            if food_results:
+                debug_log.append(f"   First: {food_results[0].get('name')}")
+        except Exception as e:
+            debug_log.append(f"4. Food API ERROR: {str(e)}")
+    else:
+        debug_log.append(f"4. Food API skipped (food_match={food_match}, dest={dest})")
+
+    # Step 5: Try Places API for tourist
+    tourist_results = []
+    if tourist_match and dest:
+        try:
+            tourist_results = recommend_tourist_spots(dest, context=test_context)
+            debug_log.append(f"5. Tourist API returned {len(tourist_results)} results")
+        except Exception as e:
+            debug_log.append(f"5. Tourist API ERROR: {str(e)}")
+    else:
+        debug_log.append(f"5. Tourist API skipped")
+
+    return {
+        "debug_log": debug_log,
+        "context": test_context,
+        "food_results": food_results[:2],
+        "tourist_results": tourist_results[:2],
+        "google_key_set": bool(GOOGLE_API_KEY)
+    }
 
 @app.post("/chat/reset")
 async def reset_context(req: Request):
@@ -491,12 +587,17 @@ async def chat(req: Request):
             )
 
     food_recommendations = []
+    print(f"🔍 CHAT DEBUG: food_asked={context['food_asked']}, destination={context['destination']}, tourist_asked={context.get('tourist_asked')}")
     if context["food_asked"] and context["destination"]:
+        print(f"🍴 Calling recommend_food_places for: {context['destination']}")
         food_recommendations = recommend_food_places(context["destination"], context=context)
+        print(f"🍴 Got {len(food_recommendations)} food results")
 
     tourist_recommendations = []
     if context.get("tourist_asked") and context["destination"]:
+        print(f"🗺️ Calling recommend_tourist_spots for: {context['destination']}")
         tourist_recommendations = recommend_tourist_spots(context["destination"], context=context)
+        print(f"🗺️ Got {len(tourist_recommendations)} tourist results")
 
     # 호텔/맛집/관광지 요청 여부 초기화
     context["hotel_asked"] = False
